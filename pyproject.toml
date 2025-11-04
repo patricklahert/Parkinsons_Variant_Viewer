@@ -1,0 +1,21 @@
+[project]
+name = "parkinsons_variant_viewer"
+version = "0.0.1"
+description = "a platform to view variants for a Parkinson's study"
+authors = [{name = "parkinsons_variant_validator Contributors", email = "ruqayyah.peerbhai@postgrad.manchester.ac.uk"}]
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Dynamically load dependencies
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools_scm]
+
+[tool.setuptools.packages.find]
+where = ["."]  # Look for packages in the 'root' directory
+
+
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2", "wheel"]
+build-backend = "setuptools.build_meta"
