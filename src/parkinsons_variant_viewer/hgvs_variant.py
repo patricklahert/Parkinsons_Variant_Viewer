@@ -1,6 +1,7 @@
 # src/parkinsons_variant_viewer/hgvs_variant.py
 import requests
 import time
+from parkinsons_variant_viewer.utils.logger import logger
 
 
 class HGVSVariant:
@@ -52,6 +53,11 @@ class HGVSVariant:
         self.selected_build = None
         self.mane_select_transcript = None
 
+        logger.debug(
+            f"Initialized HGVSVariant(chrom={chrom}, pos={pos}, "
+            f"ref={ref}, alt={alt}, genome_build={genome_build})"
+        )
+
     def _query_lovd(
         self,
         transcript_model="all",
@@ -83,6 +89,7 @@ class HGVSVariant:
             requests.exceptions.RequestException: If the API request fails.
         """
 
+        # Build the variant description string (e.g. "17:12345678:G:T")
         variant_desc = f"{self.chrom}:{self.pos}:{self.ref}:{self.alt}"
         url = (
             f"{self.BASE_URL}/{self.genome_build}/{variant_desc}/"
@@ -90,9 +97,32 @@ class HGVSVariant:
             "?content-type=application/json"
         )
 
-        response = requests.get(url, headers={"Accept": "application/json"})
-        response.raise_for_status()
-        time.sleep(0.25)  # rate limit safety
+        # Log the start of query 
+        logger.info("Querying LOVD API for variant: %s", variant_desc)
+        logger.debug("Request URL: %s", url)
+
+        try: 
+            response = requests.get(url, headers={"Accept": "application/json"})
+            response.raise_for_status()
+            logger.info(
+                "Received successful response for variant: %s (status %s)",
+                variant_desc,
+                response.status_code,
+            )
+        except requests.exceptions.RequestException as e:
+            logger.error(
+                "Request failed for variant %s: %s",
+                variant_desc,
+                e,
+                exc_info=True,
+            )
+            raise
+        
+        # Respect delay between API calls requirements
+        time.sleep(0.25)  
+
+        logger.debug("Returning JSON response for variant: %s", variant_desc)
+
         return response.json()
 
     def fetch(self):
