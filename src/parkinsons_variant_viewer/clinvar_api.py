@@ -82,6 +82,9 @@ def get_variant_info(data):
             self.conditions_assoc = kwargs.get('conditions_assoc')
             self.transcript = kwargs.get('transcript')
             self.ref_seq_id = kwargs.get('ref_seq_id')
+            self.g_change = kwargs.get('g_change')
+            self.c_change = kwargs.get('c_change')
+            self.p_change = kwargs.get('p_change')
             self.hgnc_id = kwargs.get('hgnc_id')
             self.omim_id = kwargs.get('omim_id')
             self.gene_symbol = kwargs.get('gene_symbol')
@@ -92,6 +95,7 @@ def get_variant_info(data):
                 'CHROM': self.chrom,
                 'POS': self.pos,
                 'ID': self.variant_id,
+                'G_CHANGE': self.g_change,
                 'REF': self.ref,
                 'ALT': self.alt,
                 'HGVS': self.hgvs,
@@ -101,6 +105,8 @@ def get_variant_info(data):
                 'REVIEW_STATUS': self.review_status,
                 'CONDITIONS_ASSOC': self.conditions_assoc,
                 'TRANSCRIPT': self.transcript,
+                'C_CHANGE': self.c_change,
+                'P_CHANGE': self.p_change,
                 'REF_SEQ_ID': self.ref_seq_id,
                 'HGNC_ID': self.hgnc_id,
                 'OMIM_ID': self.omim_id,
@@ -125,7 +131,11 @@ def get_variant_info(data):
         'clinical_significance': "Unknown",
         'star_rating': "N/A",
         'review_status': "Unknown",
-        'conditions_assoc': "Unknown"
+        'conditions_assoc': "Unknown",
+        # HGVS subtypes
+        'g_change': None,
+        'c_change': None,
+        'p_change': None
     }
     
     try:
@@ -138,6 +148,11 @@ def get_variant_info(data):
             match = re.match(r'^([^(]+)', title)
             if match:
                 result['transcript'] = match.group(1).strip()
+            # try to extract protein change from title like '(p.Ala281Ser)'
+            pmatch = re.search(r'\(p\.[^)]*\)', title)
+            if pmatch:
+                # keep the parentheses or strip them as desired
+                result['p_change'] = pmatch.group(0).strip('()')
         
         # Clinical significance
         germline = summary.get("germline_classification", {})
@@ -183,6 +198,24 @@ def get_variant_info(data):
                     result['pos'] = str(int(parts[1]) + 1) if parts[1].isdigit() else parts[1]
                     result['ref'] = parts[2]
                     result['alt'] = parts[3]
+                    # build genomic HGVS (g.) if possible
+                    try:
+                        if result.get('ref_seq_id') and result.get('pos') and result.get('ref') is not None and result.get('alt') is not None:
+                            result['g_change'] = f"{result['ref_seq_id']}:g.{result['pos']}{result['ref']}>{result['alt']}"
+                    except Exception:
+                        pass
+                # try to get c. change from variation block if present
+                cchange = var_set.get('cdna_change') or var_set.get('variation_name') or ''
+                if cchange:
+                    # cdna_change is usually like 'c.841G>T'
+                    if 'c.' in cchange:
+                        # prefer exact cdna_change
+                        result['c_change'] = cchange
+                    else:
+                        # try to find c. pattern inside the string
+                        cm = re.search(r'c\.[0-9+_>ginsdelA-Za-z:-]+', str(cchange))
+                        if cm:
+                            result['c_change'] = cm.group(0)
             
             # Chromosome
             var_loc = var_set.get("variation_loc", {})
@@ -210,6 +243,16 @@ def get_variant_info(data):
                 if gene_id:
                     result['hgnc_id'] = f"GeneID:{gene_id}"
                 break
+        # if protein change not found from title, try the summary protein_change field
+        if not result.get('p_change'):
+            prot = summary.get('protein_change')
+            if prot:
+                # choose first protein change entry if comma-separated
+                if isinstance(prot, str):
+                    # sometimes it's like 'A206S, A281S' -> we keep as-is
+                    result['p_change'] = prot
+                else:
+                    result['p_change'] = str(prot)
     
     except Exception as e:
         logger.warning(f"Error extracting variant details: {e}")
@@ -259,4 +302,7 @@ if __name__ == "__main__":
     print(f"HGNC_ID: {info.hgnc_id}")
     print(f"OMIM_ID: {info.omim_id}")
     print(f"GENE_SYMBOL: {info.gene_symbol}")
+    print(f"G_CHANGE: {getattr(info, 'g_change', None)}")
+    print(f"C_CHANGE: {getattr(info, 'c_change', None)}")
+    print(f"P_CHANGE: {getattr(info, 'p_change', None)}")
     
