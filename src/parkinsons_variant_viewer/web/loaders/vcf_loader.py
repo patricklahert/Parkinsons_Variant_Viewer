@@ -1,6 +1,6 @@
 import sqlite3
 from pathlib import Path
-from src.parkinsons_variant_viewer.utils.logger import logger
+from parkinsons_variant_viewer.utils.logger import logger
 
 
 def load_vcf_into_db(vcf_path, db_path):
