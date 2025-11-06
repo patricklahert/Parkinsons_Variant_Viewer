@@ -1,182 +1,262 @@
 import requests
 import xmltodict
 import logging
-import sys
-import os
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+"""Module to interact with ClinVar API and extract variant information. Queries ClinVar with HGVS nomenclature using esearch and returns the ClinVar ID.
+Uses the ClinVar ID to query efetch and esummary endpoints to extract detailed variant information."""
+
+
+
 class ClinVarApiError(Exception):
-    """
-    Custom exception raised when there's an error with ClinVar API calls.
-    """
+    """Custom exception for ClinVar API errors."""
     pass
     
 
-class VariantInfo:
-    """
-    Class to store extracted variant information from ClinVar data.
-    """
-    def __init__(self, hgvs, clinvar_id, consensus_sequence=None, star_rating=None, 
-                 clinical_significance=None, review_status=None):
-        self.hgvs = hgvs
-        self.clinvar_id = clinvar_id
-        self.consensus_sequence = consensus_sequence
-        self.star_rating = star_rating
-        self.clinical_significance = clinical_significance
-        self.review_status = review_status
-    
-
-def fetch_clinvar_variant(hgvs_expression):
-    """ takes a variant in HGVS nomenclature and returns ClinVar data as a dict"""
-
+def fetch_clinvar_variant(hgvs):
+    """Fetch ClinVar data for HGVS variant."""
+    # Search for variant
     search_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
-    search_params = {
-        "db": "clinvar",
-        "term": f'"{hgvs_expression}"[variant name]',
-        "retmode": "xml"
-    }
+    search_params = {"db": "clinvar", "term": f'"{hgvs}"[variant name]', "retmode": "xml"}
     
     try:
-        # Search for the specific HGVS variant
-        search_response = requests.get(search_url, params=search_params)
-        search_response.raise_for_status()
+        search_resp = requests.get(search_url, params=search_params)
+        search_resp.raise_for_status()
+        search_data = xmltodict.parse(search_resp.text)
         
-        # Parse XML search response
-        search_data = xmltodict.parse(search_response.text)
-        
-        # Extract ID list from XML
+        # Get variant IDs
         id_list = search_data.get("eSearchResult", {}).get("IdList", {})
-        variant_ids = []
-        if id_list and id_list.get("Id"):
-            variant_ids = id_list["Id"]
-            if isinstance(variant_ids, str):
-                variant_ids = [variant_ids]
+        ids = id_list.get("Id", [])
+        if isinstance(ids, str):
+            ids = [ids]
         
-        if not variant_ids:
-            logger.warning(f"No variants found for HGVS: {hgvs_expression}")
-            return {"variant": None, "hgvs": hgvs_expression, "found": False}
+        if not ids:
+            logger.warning(f"No variants found for HGVS: {hgvs}")
+            return {"variant": None, "summary": None, "hgvs": hgvs, "found": False}
         
-        # Try esummary instead of efetch for better results
+        # Get detailed data
+        fetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
         summary_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
-        summary_params = {
-            "db": "clinvar",
-            "id": variant_ids[0],
-            "retmode": "xml"
-        }
         
-        summary_response = requests.get(summary_url, params=summary_params)
-        summary_response.raise_for_status()
-    
-        # Parse XML response to dictionary
-        variant_data = xmltodict.parse(summary_response.text)
+        fetch_params = {"db": "clinvar", "id": ids[0], "rettype": "clinvarset", "retmode": "xml"}
+        summary_params = {"db": "clinvar", "id": ids[0], "retmode": "xml"}
+        
+        fetch_resp = requests.get(fetch_url, params=fetch_params)
+        summary_resp = requests.get(summary_url, params=summary_params)
+        
+        fetch_resp.raise_for_status()
+        summary_resp.raise_for_status()
+        
         return {
-            "variant": variant_data,
-            "hgvs": hgvs_expression,
+            "variant": xmltodict.parse(fetch_resp.text),
+            "summary": xmltodict.parse(summary_resp.text),
+            "hgvs": hgvs,
             "found": True,
-            "clinvar_id": variant_ids[0]
+            "clinvar_id": ids[0]
         }
         
     except requests.exceptions.RequestException as e:
-        logger.error(f"Error fetching ClinVar data for HGVS {hgvs_expression}: {e}")
+        logger.error(f"Error fetching ClinVar data for {hgvs}: {e}")
         raise ClinVarApiError(f"Failed to fetch ClinVar data: {e}")
 
-def get_variant_info(variant_data):
-    """
-    Extract information from ClinVar variant data and return a VariantInfo object
-
-    Returns:
-        VariantInfo: Object containing extracted variant information
-    """
-    if not variant_data.get("found", False):
+def get_variant_info(data):
+    """Extract variant information from ClinVar data."""
+    
+    class VariantInfo:
+        """Store variant information from ClinVar."""
+        def __init__(self, **kwargs):
+            self.hgvs = kwargs.get('hgvs')
+            self.clinvar_id = kwargs.get('clinvar_id')
+            self.chrom = kwargs.get('chrom')
+            self.pos = kwargs.get('pos')
+            self.variant_id = kwargs.get('variant_id')
+            self.ref = kwargs.get('ref')
+            self.alt = kwargs.get('alt')
+            self.clinical_significance = kwargs.get('clinical_significance')
+            self.star_rating = kwargs.get('star_rating')
+            self.review_status = kwargs.get('review_status')
+            self.conditions_assoc = kwargs.get('conditions_assoc')
+            self.transcript = kwargs.get('transcript')
+            self.ref_seq_id = kwargs.get('ref_seq_id')
+            self.hgnc_id = kwargs.get('hgnc_id')
+            self.omim_id = kwargs.get('omim_id')
+            self.gene_symbol = kwargs.get('gene_symbol')
+            
+        def to_dict(self):
+            """Convert to dictionary for CSV export."""
+            return {
+                'CHROM': self.chrom,
+                'POS': self.pos,
+                'ID': self.variant_id,
+                'REF': self.ref,
+                'ALT': self.alt,
+                'HGVS': self.hgvs,
+                'CLINVAR_ID': self.clinvar_id,
+                'CLINICAL_SIGNIFICANCE': self.clinical_significance,
+                'STAR_RATING': self.star_rating,
+                'REVIEW_STATUS': self.review_status,
+                'CONDITIONS_ASSOC': self.conditions_assoc,
+                'TRANSCRIPT': self.transcript,
+                'REF_SEQ_ID': self.ref_seq_id,
+                'HGNC_ID': self.hgnc_id,
+                'OMIM_ID': self.omim_id,
+                'GENE_SYMBOL': self.gene_symbol
+            }
+    
+    if not data.get("found", False):
         return VariantInfo(
-            hgvs=variant_data.get("hgvs", ""),
-            clinvar_id=variant_data.get("clinvar_id", ""),
-            consensus_sequence="Not found",
-            star_rating="N/A"
+            hgvs=data.get("hgvs", ""),
+            clinvar_id=data.get("clinvar_id", ""),
+            clinical_significance="Not found"
         )
     
-    hgvs = variant_data.get("hgvs", "")
-    clinvar_id = variant_data.get("clinvar_id", "")
-    xml_data = variant_data.get("variant", {})
+    # Get data
+    summary = data.get("summary", {}).get("eSummaryResult", {}).get("DocumentSummarySet", {}).get("DocumentSummary", {})
     
-    # Initialize default values
-    consensus_sequence = "Unknown"
-    star_rating = "N/A"
-    clinical_significance = "Unknown"
-    review_status = "Unknown"
+    # Default values
+    result = {
+        'hgvs': data.get("hgvs", ""),
+        'clinvar_id': data.get("clinvar_id", ""),
+        'variant_id': data.get("clinvar_id", ""),
+        'clinical_significance': "Unknown",
+        'star_rating': "N/A",
+        'review_status': "Unknown",
+        'conditions_assoc': "Unknown"
+    }
     
     try:
-        # Navigate through the XML structure: eSummaryResult -> DocumentSummarySet -> DocumentSummary
-        doc_summary_set = xml_data.get("eSummaryResult", {}).get("DocumentSummarySet", {})
-        doc_summary = doc_summary_set.get("DocumentSummary", {})
+        # Basic info
+        result['variant_id'] = summary.get("accession", result['clinvar_id'])
         
-        # Extract clinical significance from germline_classification
-        germline_class = doc_summary.get("germline_classification", {})
-        if germline_class:
-            consensus_sequence = germline_class.get("description", "Unknown")
-            clinical_significance = consensus_sequence
-            review_status = germline_class.get("review_status", "Unknown")
-            star_rating = map_review_status_to_stars(review_status)
+        # Extract transcript from title
+        title = summary.get("title", "")
+        if title:
+            match = re.match(r'^([^(]+)', title)
+            if match:
+                result['transcript'] = match.group(1).strip()
+        
+        # Clinical significance
+        germline = summary.get("germline_classification", {})
+        if germline:
+            result['clinical_significance'] = germline.get("description", "Unknown")
+            result['review_status'] = germline.get("review_status", "Unknown")
+            result['star_rating'] = map_review_status_to_stars(result['review_status'])
+            
+            # Conditions and OMIM
+            trait_set = germline.get("trait_set", {})
+            if trait_set:
+                traits = trait_set.get("trait", [])
+                if not isinstance(traits, list):
+                    traits = [traits]
+                
+                conditions = []
+                for trait in traits:
+                    name = trait.get("trait_name", "")
+                    if name:
+                        conditions.append(name)
+                    
+                    # OMIM ID
+                    xrefs = trait.get("trait_xrefs", {}).get("trait_xref", [])
+                    if not isinstance(xrefs, list):
+                        xrefs = [xrefs]
+                    
+                    for xref in xrefs:
+                        if xref.get("db_source") == "OMIM":
+                            result['omim_id'] = xref.get("db_id")
+                
+                if conditions:
+                    result['conditions_assoc'] = "; ".join(conditions)
+        
+        # Genomic coordinates
+        var_set = summary.get("variation_set", {}).get("variation", {})
+        if var_set:
+            # REF/ALT from SPDI
+            spdi = var_set.get("canonical_spdi", "")
+            if spdi:
+                parts = spdi.split(":")
+                if len(parts) >= 4:
+                    result['ref_seq_id'] = parts[0]
+                    result['pos'] = str(int(parts[1]) + 1) if parts[1].isdigit() else parts[1]
+                    result['ref'] = parts[2]
+                    result['alt'] = parts[3]
+            
+            # Chromosome
+            var_loc = var_set.get("variation_loc", {})
+            if var_loc:
+                assemblies = var_loc.get("assembly_set", [])
+                if not isinstance(assemblies, list):
+                    assemblies = [assemblies]
+                
+                for assembly in assemblies:
+                    if assembly.get("status") == "current" or not result.get('chrom'):
+                        result['chrom'] = assembly.get("chr", "")
+                        if not result.get('pos'):
+                            result['pos'] = assembly.get("start", "")
+                        break
+        
+        # Gene info
+        genes = summary.get("genes", {}).get("gene", [])
+        if not isinstance(genes, list):
+            genes = [genes]
+        
+        for gene in genes:
+            if isinstance(gene, dict):
+                result['gene_symbol'] = gene.get("symbol", "")
+                gene_id = gene.get("GeneID", "")
+                if gene_id:
+                    result['hgnc_id'] = f"GeneID:{gene_id}"
+                break
     
     except Exception as e:
         logger.warning(f"Error extracting variant details: {e}")
     
-    return VariantInfo(
-        hgvs=hgvs,
-        clinvar_id=clinvar_id,
-        consensus_sequence=consensus_sequence,
-        star_rating=star_rating,
-        clinical_significance=clinical_significance,
-        review_status=review_status
-    )
+    return VariantInfo(**result)
 
 
-def map_review_status_to_stars(review_status):
-    """
-    Map ClinVar review status to star rating system.
-    
-    ClinVar star rating system:
-    - 4 stars: reviewed by expert panel
-    - 3 stars: reviewed by multiple submitters, no conflicts
-    - 2 stars: reviewed by multiple submitters, conflicts resolved
-    - 1 star: reviewed by single submitter
-    - 0 stars: no assertion criteria provided
-    """
-    if not review_status:
+def map_review_status_to_stars(status):
+    """Map ClinVar review status to star rating."""
+    if not status:
         return "0"
     
-    review_status_lower = review_status.lower()
-    
-    if "expert panel" in review_status_lower:
+    status = status.lower()
+    if "expert panel" in status:
         return "4"
-    elif "multiple submitters" in review_status_lower and "no conflict" in review_status_lower:
+    elif "multiple submitters" in status and "no conflict" in status:
         return "3"
-    elif "multiple submitters" in review_status_lower:
+    elif "multiple submitters" in status:
         return "2"
-    elif "single submitter" in review_status_lower:
+    elif "single submitter" in status:
         return "1"
-    elif "no assertion" in review_status_lower or "no criteria" in review_status_lower:
+    elif "no assertion" in status or "no criteria" in status:
         return "0"
     else:
         return "N/A"
 
 
-
-
 if __name__ == "__main__":
-    # Test with a complete HGVS expression
-    result = fetch_clinvar_variant("NC_000017.11:g.45983420G>T") 
-    
-    # Extract information using get_variant_info function
-    variant_info = get_variant_info(result)
+    # Test
+    result = fetch_clinvar_variant("NC_000017.11:g.45983420G>T") # Example HGVS - should return data for all fields 
+    info = get_variant_info(result)
     
     print("Variant Information:")
-    print(f"HGVS: {variant_info.hgvs}")
-    print(f"ClinVar ID: {variant_info.clinvar_id}")
-    print(f"Clinical Significance: {variant_info.clinical_significance}")
-    print(f"Star Rating: {variant_info.star_rating}")
-    print(f"Review Status: {variant_info.review_status}")
+    print(f"CHROM: {info.chrom}")
+    print(f"POS: {info.pos}")
+    print(f"ID: {info.variant_id}")
+    print(f"REF: {info.ref}")
+    print(f"ALT: {info.alt}")
+    print(f"HGVS: {info.hgvs}")
+    print(f"CLINVAR_ID: {info.clinvar_id}")
+    print(f"CLINICAL_SIGNIFICANCE: {info.clinical_significance}")
+    print(f"STAR_RATING: {info.star_rating}")
+    print(f"REVIEW_STATUS: {info.review_status}")
+    print(f"CONDITIONS_ASSOC: {info.conditions_assoc}")
+    print(f"TRANSCRIPT: {info.transcript}")
+    print(f"REF_SEQ_ID: {info.ref_seq_id}")
+    print(f"HGNC_ID: {info.hgnc_id}")
+    print(f"OMIM_ID: {info.omim_id}")
+    print(f"GENE_SYMBOL: {info.gene_symbol}")
     
