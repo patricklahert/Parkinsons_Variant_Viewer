@@ -1,0 +1,66 @@
+<!doctype html>
+<html>
+<head>
+    <title>Variants</title>
+</head>
+<body>
+    <h1>All Variants</h1>
+
+    <p><a href="{{ url_for('web.add_variant') }}">Add a new input variant</a></p>
+    <a href="{{ url_for('web.view_inputs') }}">View raw inputs</a>
+
+    <table border="1" cellpadding="5" cellspacing="0">
+        <tr>
+            <th>Patient</th>
+            <th>Variant #</th>
+            <th>CHROM</th>
+            <th>POS</th>
+            <th>ID</th>
+            <th>REF</th>
+            <th>ALT</th>
+
+            <!-- Output fields -->
+            <th>HGVS</th>
+            <th>ClinVar ID</th>
+            <th>Clinical Significance</th>
+            <th>Star Rating</th>
+            <th>Review Status</th>
+            <th>Conditions</th>
+            <th>Transcript</th>
+            <th>RefSeq ID</th>
+            <th>HGNC ID</th>
+            <th>OMIM ID</th>
+            <th>g. Change</th>
+            <th>c. Change</th>
+            <th>p. Change</th>
+        </tr>
+
+        {% for v in variants %}
+        <tr>
+            <td>{{ v.patient_id }}</td>
+            <td>{{ v.variant_number }}</td>
+            <td>{{ v.chrom }}</td>
+            <td>{{ v.pos }}</td>
+            <td>{{ v.id }}</td>
+            <td>{{ v.ref }}</td>
+            <td>{{ v.alt }}</td>
+
+            <td>{{ v.hgvs or '' }}</td>
+            <td>{{ v.clinvar_id or '' }}</td>
+            <td>{{ v.clinical_significance or '' }}</td>
+            <td>{{ v.star_rating or '' }}</td>
+            <td>{{ v.review_status or '' }}</td>
+            <td>{{ v.conditions_assoc or '' }}</td>
+            <td>{{ v.transcript or '' }}</td>
+            <td>{{ v.ref_seq_id or '' }}</td>
+            <td>{{ v.hgnc_id or '' }}</td>
+            <td>{{ v.omim_id or '' }}</td>
+            <td>{{ v.g_change or '' }}</td>
+            <td>{{ v.c_change or '' }}</td>
+            <td>{{ v.p_change or '' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+    <title>Input Variants</title>
+</head>
+<body>
+
+<h1>Input Variants (Raw Data)</h1>
+
+<p><a href="{{ url_for('web.index') }}">Back to main view</a></p>
+
+<table border="1" cellpadding="5" cellspacing="0">
+    <tr>
+        <th>Patient</th>
+        <th>Variant #</th>
+        <th>CHROM</th>
+        <th>POS</th>
+        <th>ID</th>
+        <th>REF</th>
+        <th>ALT</th>
+    </tr>
+
+    {% for v in inputs %}
+    <tr>
+        <td>{{ v.patient_id }}</td>
+        <td>{{ v.variant_number }}</td>
+        <td>{{ v.chrom }}</td>
+        <td>{{ v.pos }}</td>
+        <td>{{ v.id }}</td>
+        <td>{{ v.ref }}</td>
+        <td>{{ v.alt }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+</body>
+</html>

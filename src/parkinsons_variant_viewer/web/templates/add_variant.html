@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+    <title>Add Variant</title>
+</head>
+<body>
+    <h1>Add Input Variant</h1>
+
+    <form method="post">
+
+        <label>Patient ID:</label><br>
+        <input type="number" name="patient_id" required><br><br>
+
+        <label>Variant Number:</label><br>
+        <input type="number" name="variant_number" required><br><br>
+
+        <label>CHROM:</label><br>
+        <input type="text" name="chrom" required><br><br>
+
+        <label>POS:</label><br>
+        <input type="number" name="pos" required><br><br>
+
+        <label>ID:</label><br>
+        <input type="text" name="id"><br><br>
+
+        <label>REF:</label><br>
+        <input type="text" name="ref" required><br><br>
+
+        <label>ALT:</label><br>
+        <input type="text" name="alt" required><br><br>
+
+        <button type="submit">Submit</button>
+    </form>
+
+    <p><a href="{{ url_for('web.index') }}">Back to all variants</a></p>
+</body>
+</html>
